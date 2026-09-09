@@ -80,6 +80,39 @@ ablation on every metric**.
 sample must be shrunk hard. The naive hierarchical fit isn't just noisy — it is
 confidently, directionally wrong, and worse than not modelling groups at all.
 
+## External check: the betting market
+
+Odds were pulled **once, read-only** for the six Matchday-1 fixtures of
+2026-09-09 and de-vigged, purely as an outside reference (never a feature).
+
+**Four of six agree within 3.4pp on every outcome** — including correctly making
+Arsenal a road favourite at Napoli (model 51%, market 54%). Two disagree badly,
+and in the *same direction*:
+
+| Fixture | Model (underdog) | Market | Gap |
+|---|---:|---:|---:|
+| Stuttgart vs **Viking FK** | 20.0% | 9.0% | **+11.0pp** |
+| Barcelona vs **Feyenoord** | 11.0% | 4.1% | **+6.9pp** |
+
+The model shifts probability off the favourite into *both* the draw and the
+underdog — the signature of under-dispersed ratings. Held-out data partly
+agrees: in the most lopsided third of cross-league matches the model puts the
+favourite at **64.5%** when it actually wins **67.1%** (+2.6pp), and predicts
+**20.3%** draws against **17.1%** actual.
+
+But the fix is *not* to loosen the team-ratings penalty. Sweeping it shows a
+genuine **sharpness-vs-calibration trade-off**: `ridge=16` minimises log loss in
+every imbalance bucket, while `ridge=2` is near-perfectly calibrated on
+favourite win rate and *worse* on log loss and Brier everywhere. The whole
+surface spans 0.967–0.971 log loss — inside the noise of 1,838 matches — so the
+shipped default (`ridge=8`, `league_pen=15`) is left where it is rather than
+tuned to the third decimal of a single test set.
+
+The residual double-digit gaps on Viking and Feyenoord are therefore **not**
+explained by shrinkage alone. The likelier causes are structural and are stated
+in Limitations: Viking has 4 matches of evidence, and the market knows the
+2026-27 season and summer transfers that this model cannot see.
+
 ## Engineering notes worth reading
 
 - **Cross-source club identity is the real dirty work.** football-data.co.uk
