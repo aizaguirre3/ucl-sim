@@ -1,0 +1,15 @@
+# Raw feeds + derived caches are re-downloadable; keep the repo light.
+data/raw/
+data/*.rds
+
+# R session
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
