@@ -113,6 +113,45 @@ explained by shrinkage alone. The likelier causes are structural and are stated
 in Limitations: Viking has 4 matches of evidence, and the market knows the
 2026-27 season and summer transfers that this model cannot see.
 
+## Scored: Matchday 1, 9 September 2026
+
+The forecast above was committed **before kickoff** and graded afterwards.
+
+| Model | Log loss | Brier |
+|---|---:|---:|
+| Market (de-vigged) | **0.382** | **0.174** |
+| **Dixon-Coles (ours)** | 0.438 | 0.204 |
+| Naive 33/33/33 | 1.099 | 0.667 |
+
+**Outright result: 6 of 6 correct**, including Arsenal to win away at Napoli.
+The model beat an uninformed baseline by a mile — and **lost to the market**,
+which is the honest and expected outcome given the market knows the current
+season and this model's data stops on 2026-05-30.
+
+Where it lost is the interesting part. The pre-kickoff market check flagged
+exactly two fixtures as outliers, both "over-rates the weak-league underdog":
+
+| Match | Result | Model p(actual) | Market p(actual) |
+|---|---|---:|---:|
+| Barcelona **5-1** Feyenoord | home | 0.742 | **0.873** |
+| Stuttgart **3-1** Viking FK | home | 0.610 | **0.764** |
+| Liverpool **2-1** Atlético | home | **0.583** | 0.550 |
+| PSG **6-1** Slovan | home | 0.920 | **0.926** |
+| Sporting **3-1** Galatasaray | home | **0.585** | 0.546 |
+| Napoli **0-1** Arsenal | away | 0.509 | **0.543** |
+
+Both flagged fixtures resolved as comfortable favourite wins (5-1 and 3-1) —
+precisely the direction the diagnostic predicted, and essentially all of the
+model's deficit came from those two rows. On the four fixtures where model and
+market agreed, **the model beat the market on two of them**.
+
+Also consistent with the under-dispersion finding: the model carried an average
+**18% draw probability** and there were **0 draws in 6**.
+
+*Sample-size honesty: n = 6. One matchday settles nothing — it is reported
+because a forecast you never grade is worthless, not because six matches
+validate or refute a model.* Re-run with `Rscript R/05_score.R`.
+
 ## Engineering notes worth reading
 
 - **Cross-source club identity is the real dirty work.** football-data.co.uk
