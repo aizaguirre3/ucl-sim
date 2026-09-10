@@ -119,6 +119,8 @@ CLUB_ALIAS <- c(
   # Netherlands
   "N1|psv"                        = "PSV Eindhoven",
   "N1|feyenoord rotterdam"        = "Feyenoord",
+  "N1|nec"                        = "Nijmegen",   # NEC Nijmegen
+  "N1|fortuna sittard"            = "For Sittard",
   # Greece
   "G1|olympiakos piraeus"         = "Olympiakos",
   "G1|olympiacos"                 = "Olympiakos",

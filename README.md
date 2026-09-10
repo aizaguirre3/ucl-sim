@@ -172,10 +172,41 @@ validate or refute a model.* Re-run with `Rscript R/05_score.R`.
   ×1.06 and did not improve cross-league scores (0.9695 vs 0.9688). Reported,
   not hidden.
 
+## Fetching remote data safely
+
+`R/01_current_season.R` pulls from the public internet, so the guardrails are
+enforced in code rather than assumed:
+
+1. **Allowlist** — only the exact hard-coded URLs are fetched, each asserted to
+   sit under `https://raw.githubusercontent.com/openfootball/`; no URL is built
+   from external input, and `..` is rejected.
+2. **Text only** — files are plain `.txt`, read as text and parsed with regexes.
+   Nothing downloaded is ever `source()`d, `eval()`d, `parse()`d, deserialized,
+   or passed to `system()`. There is no path by which remote content executes.
+3. **Size cap** — anything over 2 MB is deleted and rejected (real files ~20 KB).
+4. **Sandboxed** — writes go only to `data/raw/`, `chmod 0644`, never executable,
+   never outside the project. No archive extraction.
+5. **Structural validation** — parsed rows must have in-season dates, scores in
+   0–20, non-empty distinct team names, and a plausible match count, or the file
+   is discarded whole.
+6. **No overlap** — only matches strictly after the existing history are
+   accepted, so new data cannot silently duplicate or contradict trusted rows.
+7. **Fixture-file rejection** — a file yielding fewer than 5 results is a
+   published *schedule*, not a results feed (Belgium's `be1.txt`), and is
+   dropped.
+
+Club-name mapping is also reviewed rather than trusted: every non-exact match is
+printed for inspection and a collision check verifies no two source names claim
+the same club. Of 30 non-exact decisions on the 2026-27 pull, 22 were
+whole-token containment (`Genoa CFC` → `Genoa`, `AZ` → `AZ Alkmaar`), and the
+matcher correctly *declined* to merge `Académico de Viseu` with the different
+club `Academica`.
+
 ## Pipeline
 
 ```
 R/00_ingest.R      11 domestic leagues + European bridge; club identity matching
+R/01_current_season.R  current-season results from openfootball (guardrailed)
 R/02_match_model.R hierarchical Dixon-Coles, sparse IRLS
 R/03_crossleague.R rolling-origin cross-league validation + bias test
 R/04_predict.R     forecast a fixture slate
@@ -184,11 +215,15 @@ R/utils.R          score matrix, DC tau, scoring metrics (shared with wc-sim)
 
 ## Limitations (stated, not buried)
 
-- **No 2026-27 domestic form.** football-data.co.uk was returning HTTP 503
-  during the build, so the model trains through **2026-05-30** — it has not seen
-  the opening weeks of the current domestic season, nor summer transfers.
-  Club squads churn far more than national teams, so this matters more here than
-  it would for a World Cup model.
+- **Current-season coverage is partial.** football-data.co.uk went to HTTP 503
+  and stayed there, so current-season form is pulled from **openfootball**
+  instead (`R/01_current_season.R`), taking the model through **2026-09-07**.
+  But that is only **229 matches across 7 leagues (~3.5 per club)**, so it
+  barely moves a September forecast — it will compound as the season runs.
+  Turkey, Greece and Scotland have no 2026-27 file published yet, and the
+  pseudo-leagues (Norway, Ukraine, Azerbaijan, Czechia…) have **no domestic feed
+  at all**. So the clubs the model is *least* certain about are precisely the
+  ones that receive no new data. Summer transfers are still invisible.
 - **Thin evidence for small leagues.** Viking FK has **4** matches in the data;
   its rating is essentially the Norwegian pseudo-league term, which is itself
   dominated by Bodø/Glimt (20 of 56 matches). Forecasts involving such clubs
@@ -201,8 +236,10 @@ R/utils.R          score matrix, DC tau, scoring metrics (shared with wc-sim)
 
 ## Data & attribution
 
-- Domestic results: **football-data.co.uk** (free CSVs, 11 leagues, 2015-16 →
-  2025-26).
+- Domestic results (history): **football-data.co.uk** (free CSVs, 11 leagues,
+  2015-16 → 2025-26).
+- Domestic results (current season): **openfootball** (CC0 public domain), 7
+  leagues, 2026-27.
 - European results: **openfootball/champions-league** (UCL proper + UCL/UEL/UECL
   qualifying, 2015-16 → 2025-26).
 - Betting odds are used **once, read-only**, as an external calibration

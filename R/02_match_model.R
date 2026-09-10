@@ -51,10 +51,20 @@ fit_poisson_irls <- function(X, y, w, pen, maxit = 60, tol = 1e-9) {
 #' Clubs outside the 11 modelled leagues keep their European name and are
 #' assigned a pseudo-league equal to their country code.
 prepare_matches <- function(domestic = readRDS("data/domestic.rds"),
-                            bridge_mapped = readRDS("data/bridge_mapped.rds")) {
+                            bridge_mapped = readRDS("data/bridge_mapped.rds"),
+                            current = if (file.exists("data/current_season.rds"))
+                              readRDS("data/current_season.rds") else NULL) {
   dom <- domestic |>
     transmute(date, home, away, hs, as, lg_home = div, lg_away = div,
               comp = "domestic")
+  # Current-season results from openfootball (R/01_current_season.R). These are
+  # guaranteed by that script to fall strictly after the football-data history,
+  # so there is no overlap to de-duplicate.
+  if (!is.null(current) && nrow(current)) {
+    dom <- bind_rows(dom, current |>
+      transmute(date, home, away, hs, as, lg_home = div, lg_away = div,
+                comp = "domestic"))
+  }
   # Clubs with no domestic league appear only under their European spelling,
   # and that spelling drifts between seasons ("Slovan Bratislava" vs
   # "SK Slovan Bratislava"), which silently splits one club's history into two
