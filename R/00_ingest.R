@@ -150,12 +150,15 @@ CLUB_ALIAS <- c(
 )
 
 SEASONS <- c("1516", "1617", "1718", "1819", "1920", "2021",
-             "2122", "2223", "2324", "2425", "2526")
+             "2122", "2223", "2324", "2425", "2526", "2627")
 UCL_SEASONS <- c("2015-16", "2016-17", "2017-18", "2018-19", "2019-20",
                  "2020-21", "2021-22", "2022-23", "2023-24", "2024-25",
                  "2025-26")
 
-FD_BASE <- "https://www.football-data.co.uk/mmz4281"
+# Bare domain: www.football-data.co.uk now 302-redirects here.
+FD_BASE <- "https://football-data.co.uk/mmz4281"
+FD_HOST <- "https://football-data.co.uk/"
+CURRENT_FD_SEASON <- "2627"   # refreshed on every run; older seasons are cached
 OF_BASE <- paste0("https://raw.githubusercontent.com/openfootball/",
                   "champions-league/master")
 
@@ -213,33 +216,54 @@ parse_fd_date <- function(x) {
   out
 }
 
-#' Download + parse every league-season CSV (cached under data/raw).
+# Same guardrails as R/01_current_season.R: allowlisted host, size cap, content
+# must actually be a football-data CSV, and a failed/HTML response is written to
+# a .part file that never overwrites the last good cached copy. Nothing fetched
+# is ever executed -- it is read with read_csv() only.
+.fd_fetch <- function(url, dest, refresh = FALSE) {
+  if (!startsWith(url, FD_HOST) || grepl("..", url, fixed = TRUE))
+    stop("BLOCKED: off-allowlist URL: ", url)
+  if (!refresh && file.exists(dest) && file.info(dest)$size > 0) return(TRUE)
+  tmp <- paste0(dest, ".part")
+  ok <- tryCatch({ utils::download.file(url, tmp, quiet = TRUE); TRUE },
+                 error = function(e) FALSE)
+  if (!ok) { unlink(tmp); return(file.exists(dest)) }     # keep last good copy
+  sz <- file.info(tmp)$size
+  head1 <- tryCatch(readLines(tmp, n = 1L, warn = FALSE), error = function(e) "")
+  if (is.na(sz) || sz <= 0 || sz > 2e6 || !any(grepl("HomeTeam", head1, fixed = TRUE))) {
+    unlink(tmp); warning("REJECTED (not a football-data CSV): ", url)
+    return(file.exists(dest))
+  }
+  file.rename(tmp, dest); Sys.chmod(dest, "0644")
+  TRUE
+}
+
+#' Download + parse every league-season CSV (cached under data/raw). Keeps the
+#' shots-on-target columns (HST/AST) for the goals/shots blend in the model.
 load_domestic <- function(force = FALSE) {
   rows <- list()
   for (s in SEASONS) for (d in LEAGUES$div) {
     f <- file.path("data/raw", sprintf("fd_%s_%s.csv", s, d))
-    if (force || !file.exists(f)) {
-      url <- sprintf("%s/%s/%s.csv", FD_BASE, s, d)
-      ok <- tryCatch({
-        utils::download.file(url, f, quiet = TRUE); TRUE
-      }, error = function(e) FALSE)
-      if (!ok) next
-    }
+    url <- sprintf("%s/%s/%s.csv", FD_BASE, s, d)
+    if (!.fd_fetch(url, f, refresh = force || s == CURRENT_FD_SEASON)) next
     x <- tryCatch(suppressWarnings(
       read_csv(f, show_col_types = FALSE, progress = FALSE,
                name_repair = "minimal")), error = function(e) NULL)
     if (is.null(x) || !all(c("HomeTeam", "AwayTeam", "FTHG", "FTAG") %in% names(x)))
       next
-    x <- x[, c("Div", "Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG")]
-    names(x) <- c("div", "date", "home", "away", "hs", "as")
-    rows[[length(rows) + 1L]] <- x |> mutate(season = s)
+    getc <- function(nm) if (nm %in% names(x)) x[[nm]] else rep(NA, nrow(x))
+    rows[[length(rows) + 1L]] <- tibble(
+      div = as.character(x$Div), date = as.character(x$Date),
+      home = as.character(x$HomeTeam), away = as.character(x$AwayTeam),
+      hs = suppressWarnings(as.numeric(x$FTHG)),
+      as = suppressWarnings(as.numeric(x$FTAG)),
+      sot_h = suppressWarnings(as.numeric(getc("HST"))),
+      sot_a = suppressWarnings(as.numeric(getc("AST"))),
+      season = s)
   }
   bind_rows(rows) |>
-    mutate(
-      date = parse_fd_date(date),
-      hs = suppressWarnings(as.integer(hs)),
-      as = suppressWarnings(as.integer(as))
-    ) |>
+    mutate(date = parse_fd_date(date),
+           hs = as.integer(hs), as = as.integer(as)) |>
     filter(!is.na(date), !is.na(hs), !is.na(as), !is.na(home), !is.na(away)) |>
     mutate(comp = "domestic", neutral = FALSE)
 }

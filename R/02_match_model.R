@@ -54,16 +54,24 @@ prepare_matches <- function(domestic = readRDS("data/domestic.rds"),
                             bridge_mapped = readRDS("data/bridge_mapped.rds"),
                             current = if (file.exists("data/current_season.rds"))
                               readRDS("data/current_season.rds") else NULL) {
+  for (nm in c("sot_h", "sot_a"))
+    if (!nm %in% names(domestic)) domestic[[nm]] <- NA_real_
   dom <- domestic |>
     transmute(date, home, away, hs, as, lg_home = div, lg_away = div,
-              comp = "domestic")
-  # Current-season results from openfootball (R/01_current_season.R). These are
-  # guaranteed by that script to fall strictly after the football-data history,
-  # so there is no overlap to de-duplicate.
+              sot_h, sot_a, comp = "domestic")
+  # football-data now covers the current season itself, so openfootball only
+  # contributes rows strictly newer than football-data's latest date PER LEAGUE
+  # (normally none). Enforced here as well as at ingest -- defence in depth
+  # against double-counting the same match from two sources.
   if (!is.null(current) && nrow(current)) {
-    dom <- bind_rows(dom, current |>
-      transmute(date, home, away, hs, as, lg_home = div, lg_away = div,
-                comp = "domestic"))
+    lastd <- domestic |> group_by(div) |>
+      summarise(last = max(date), .groups = "drop")
+    fresh <- current |> left_join(lastd, by = "div") |>
+      filter(is.na(last) | date > last)
+    if (nrow(fresh))
+      dom <- bind_rows(dom, fresh |>
+        transmute(date, home, away, hs, as, lg_home = div, lg_away = div,
+                  sot_h = NA_real_, sot_a = NA_real_, comp = "domestic"))
   }
   # Clubs with no domestic league appear only under their European spelling,
   # and that spelling drifts between seasons ("Slovan Bratislava" vs
@@ -116,7 +124,7 @@ prepare_matches <- function(domestic = readRDS("data/domestic.rds"),
 fit_club_model <- function(matches, ref_date = max(matches$date),
                            half_life = 730, ridge = 8, league_pen = 15,
                            w_european = 1, window_years = 11,
-                           use_league = TRUE) {
+                           use_league = TRUE, shot_w = 0) {
   ref_date <- as.Date(ref_date)
   df <- matches |>
     filter(date <= ref_date, date >= ref_date - round(window_years * 365.25)) |>
@@ -128,12 +136,27 @@ fit_club_model <- function(matches, ref_date = max(matches$date),
   leagues <- sort(unique(c(df$lg_home, df$lg_away)))
   nT <- length(teams); nL <- length(leagues)
 
+  # Response: goals, optionally blended with a shots-on-target xG proxy.
+  # Split-half tests on 1,979 team-seasons: SOT alone predicts future goals no
+  # better than goals (r 0.684 vs 0.684 attack; 0.540 vs 0.554 defence) but the
+  # 50/50 blend beats both (0.714; 0.584) -- the two carry partly independent
+  # signal. The goals-per-SOT rate is estimated from THIS fit's training rows,
+  # so validation folds never see future data. Rows without shots (European
+  # bridge matches, a few early seasons) fall back to actual goals.
+  if (!"sot_h" %in% names(df)) df$sot_h <- NA_real_
+  if (!"sot_a" %in% names(df)) df$sot_a <- NA_real_
+  has_sot <- !is.na(df$sot_h) & !is.na(df$sot_a)
+  conv <- if (any(has_sot))
+    sum(df$hs[has_sot] + df$as[has_sot]) / sum(df$sot_h[has_sot] + df$sot_a[has_sot]) else 0
+  df$yh <- ifelse(has_sot, (1 - shot_w) * df$hs + shot_w * conv * df$sot_h, df$hs)
+  df$ya <- ifelse(has_sot, (1 - shot_w) * df$as + shot_w * conv * df$sot_a, df$as)
+
   # long format: one row per (match, scoring side)
   long <- bind_rows(
-    df |> transmute(goals = hs, off = home, def = away,
+    df |> transmute(goals = yh, off = home, def = away,
                     lg_off = lg_home, lg_def = lg_away, home = 1L,
                     eu = as.integer(comp == "european"), w),
-    df |> transmute(goals = as, off = away, def = home,
+    df |> transmute(goals = ya, off = away, def = home,
                     lg_off = lg_away, lg_def = lg_home, home = 0L,
                     eu = as.integer(comp == "european"), w)
   )
@@ -201,7 +224,8 @@ fit_club_model <- function(matches, ref_date = max(matches$date),
     rho = rho, teams = teams, leagues = leagues, team_league = team_league,
     ref_date = ref_date, n_matches = nrow(df), use_league = use_league,
     params = list(half_life = half_life, ridge = ridge,
-                  w_european = w_european, window_years = window_years)
+                  w_european = w_european, window_years = window_years,
+                  shot_w = shot_w, goals_per_sot = conv)
   ), class = "club_dc")
 }
 

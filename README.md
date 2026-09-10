@@ -152,6 +152,63 @@ Also consistent with the under-dispersion finding: the model carried an average
 because a forecast you never grade is worthless, not because six matches
 validate or refute a model.* Re-run with `Rscript R/05_score.R`.
 
+## Tested and rejected: shots on target as an xG proxy
+
+**Why not real xG?** Both free xG sources were checked and deliberately *not*
+scraped. Understat's `robots.txt` is `Disallow: /` (and it only covers the big
+five plus Russia anyway — no Eredivisie, Süper Lig or Champions League). FBref
+sits behind an active Cloudflare challenge on every page. Getting past either
+would mean ignoring the site owner's access controls.
+
+**The legitimate proxy.** football-data.co.uk (robots: all crawlers allowed)
+publishes shots and shots on target for every match. Off-target shots carry no
+goal signal (−0.014 goals each); shots on target convert at ~0.32.
+
+**It passes the easy test.** Split-half across 1,979 team-seasons, a 50/50
+goals/SOT blend predicts second-half goals better than goals alone —
+r 0.714 vs 0.684 (attack), 0.584 vs 0.554 (defence). SOT *alone* is no better
+than goals.
+
+**It fails the real one.** Wired into the model (`shot_w`, with goals-per-SOT
+estimated from each fold's training rows only) and scored on the same 1,838
+held-out cross-league matches, every amount of shots makes things *worse*,
+monotonically:
+
+| shots weight | log loss | Δ vs goals-only (± SE) |
+|---|---:|---:|
+| **0 (goals only)** | **0.9698** | — |
+| 0.25 | 0.9706 | +0.0008 ± 0.0004 |
+| 0.50 | 0.9717 | +0.0019 ± 0.0009 |
+| 0.75 | 0.9732 | +0.0034 ± 0.0013 |
+| 1.00 | 0.9751 | +0.0053 ± 0.0018 |
+
+The likely reason is sample size: the split-half test works on half-seasons
+(~17 games), where goal counts are noisy and shots help. The model averages
+50–100 time-weighted matches per club, by which point goal noise has already
+washed out. The option stays in the code (`shot_w`, default 0); the shipped
+model uses goals. Reproduce with `Rscript R/03d_shots_validation.R`.
+
+## Matchday 1, Thursday: Fenerbahçe–Roma and PSV–Shakhtar
+
+Committed before kickoff, with 2026-27 form (football-data, all 11 leagues) in
+the model. Market = de-vigged pre-match odds, read once as a reference.
+
+| Fixture | Model H / D / A | Market H / D / A | xG-informed (not shipped) |
+|---|---|---|---|
+| Fenerbahçe vs Roma | **40** / 25 / 35 | 29 / 27 / **44** | 43 / 25 / 33 |
+| PSV vs Shakhtar Donetsk | **69** / 18 / 13 | **65** / 19 / 15 | 68 / 18 / 14 |
+
+- **PSV–Shakhtar:** within 4pp of the market on every outcome — and this time
+  the model is slightly *more* confident in the favourite than the market, the
+  opposite of Wednesday's pattern.
+- **Fenerbahçe–Roma is the biggest disagreement on the board, and it is about
+  who is favoured.** The model rates Roma the stronger side (net 1.07 vs 0.86)
+  but home advantage flips it; the market backs Roma. The shots blend would
+  push the model *further* from the market: Fenerbahçe have under-performed
+  their shots (8–6 in goals vs ~9.1–5.4 shot-implied, including an
+  11-shots-on-target defeat at Gençlerbirliği), while Roma's rating drops more
+  under the blend — their goals have been running ahead of their shots.
+
 ## Engineering notes worth reading
 
 - **Cross-source club identity is the real dirty work.** football-data.co.uk
@@ -195,6 +252,12 @@ enforced in code rather than assumed:
    published *schedule*, not a results feed (Belgium's `be1.txt`), and is
    dropped.
 
+The football-data.co.uk fetcher (`R/00_ingest.R`) follows the same allowlist,
+size and text-only rules, plus one more: each download lands in a `.part` file
+and only replaces the cached copy if its first line is a genuine football-data
+header — so an outage page or a truncated response can never overwrite good
+data. (This mattered: the site spent a day returning 503.)
+
 Club-name mapping is also reviewed rather than trusted: every non-exact match is
 printed for inspection and a collision check verifies no two source names claim
 the same club. Of 30 non-exact decisions on the 2026-27 pull, 22 were
@@ -206,24 +269,25 @@ club `Academica`.
 
 ```
 R/00_ingest.R      11 domestic leagues + European bridge; club identity matching
-R/01_current_season.R  current-season results from openfootball (guardrailed)
+R/01_current_season.R  current-season fallback from openfootball (guardrailed)
 R/02_match_model.R hierarchical Dixon-Coles, sparse IRLS
 R/03_crossleague.R rolling-origin cross-league validation + bias test
+R/03d_shots_validation.R  shots-on-target blend, tested (and rejected) out of sample
 R/04_predict.R     forecast a fixture slate
 R/utils.R          score matrix, DC tau, scoring metrics (shared with wc-sim)
 ```
 
 ## Limitations (stated, not buried)
 
-- **Current-season coverage is partial.** football-data.co.uk went to HTTP 503
-  and stayed there, so current-season form is pulled from **openfootball**
-  instead (`R/01_current_season.R`), taking the model through **2026-09-07**.
-  But that is only **229 matches across 7 leagues (~3.5 per club)**, so it
-  barely moves a September forecast — it will compound as the season runs.
-  Turkey, Greece and Scotland have no 2026-27 file published yet, and the
-  pseudo-leagues (Norway, Ukraine, Azerbaijan, Czechia…) have **no domestic feed
-  at all**. So the clubs the model is *least* certain about are precisely the
-  ones that receive no new data. Summer transfers are still invisible.
+- **Current-season data is thin in September.** football-data.co.uk spent a
+  day returning HTTP 503, then came back behind a `www` → bare-domain redirect;
+  it is again the primary source, now including 2026-27 for all 11 leagues with
+  shots (openfootball remains as a guardrailed fallback that can only add
+  matches newer than football-data's, per league). But at ~3–4 matches per club,
+  current form barely moves a forecast yet. The pseudo-league clubs (Norway,
+  Ukraine, Azerbaijan, Czechia…) have **no domestic feed at all**, so the clubs
+  the model is *least* certain about get no new data. Summer transfers are
+  still invisible.
 - **Thin evidence for small leagues.** Viking FK has **4** matches in the data;
   its rating is essentially the Norwegian pseudo-league term, which is itself
   dominated by Bodø/Glimt (20 of 56 matches). Forecasts involving such clubs
@@ -236,10 +300,10 @@ R/utils.R          score matrix, DC tau, scoring metrics (shared with wc-sim)
 
 ## Data & attribution
 
-- Domestic results (history): **football-data.co.uk** (free CSVs, 11 leagues,
-  2015-16 → 2025-26).
-- Domestic results (current season): **openfootball** (CC0 public domain), 7
-  leagues, 2026-27.
+- Domestic results: **football-data.co.uk** (free CSVs incl. shots, 11
+  leagues, 2015-16 → 2026-27).
+- Current-season fallback: **openfootball** (CC0 public domain), used only for
+  matches newer than football-data's latest.
 - European results: **openfootball/champions-league** (UCL proper + UCL/UEL/UECL
   qualifying, 2015-16 → 2025-26).
 - Betting odds are used **once, read-only**, as an external calibration
