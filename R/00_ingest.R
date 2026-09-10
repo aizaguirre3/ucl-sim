@@ -166,7 +166,12 @@ OF_BASE <- paste0("https://raw.githubusercontent.com/openfootball/",
 NOISE <- c("fc", "cf", "afc", "sc", "ssc", "bsc", "sk", "bv", "sv", "vfb",
            "vfl", "tsg", "cp", "ud", "cd", "rc", "sd", "ac", "as", "ss", "kv",
            "kaa", "rsc", "calcio", "sportiva", "association", "aps", "pae",
-           "sfp", "de", "of", "the")
+           "sfp", "de", "of", "the",
+           # Central/Eastern-European legal-form prefixes. Omitting these split
+           # e.g. "FK Shakhtar Donetsk" from "Shakhtar Donetsk" into two weaker
+           # identities -- the same failure mode as the Slovan Bratislava case.
+           "fk", "nk", "hnk", "gnk", "mfk", "ofk", "pfc", "fsv", "tsv", "msv",
+           "bk", "if", "ik", "fkø")
 
 #' Normalize a club name to a comparable key.
 #' Lowercases, strips accents and punctuation, drops legal/sport noise tokens.

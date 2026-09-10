@@ -21,6 +21,20 @@ MD1_WED <- tibble::tribble(
   "Napoli",              "Napoli",     "I1",     "Arsenal",            "Arsenal",            "E0"
 )
 
+# 2026/27 UCL league phase, Matchday 1, Thu 10 Sep 2026 (final MD1 slate).
+# NOTE: four of these six involve clubs with very little data (Bodo/Glimt n=20,
+# Slavia Praha n=18, Sabah FK n=10), i.e. precisely where the cross-league
+# validation says this model is least trustworthy.
+MD1_THU <- tibble::tribble(
+  ~home_label,        ~home_team,          ~home_lg, ~away_label,        ~away_team,          ~away_lg,
+  "Fenerbahce",       "Fenerbahce",        "T1",     "Roma",             "Roma",              "I1",
+  "PSV Eindhoven",    "PSV Eindhoven",     "N1",     "Shakhtar Donetsk", "Shakhtar Donetsk",  "X_UKR",
+  "Como",             "Como",              "I1",     "RB Leipzig",       "RB Leipzig",        "D1",
+  "Bayern Munich",    "Bayern Munich",     "D1",     "Bodo/Glimt",       "FK Bodø/Glimt",     "X_NOR",
+  "Manchester United","Man United",        "E0",     "Sabah FK",         "Sabah FK",          "X_AZE",
+  "Slavia Praha",     "Slavia Praha",      "X_CZE",  "Lens",             "Lens",              "F1"
+)
+
 top_scores <- function(m, k = 3) {
   o <- order(-m); idx <- arrayInd(o[seq_len(k)], dim(m))
   paste(sprintf("%d-%d (%.0f%%)", idx[, 1] - 1, idx[, 2] - 1, 100 * m[o[seq_len(k)]]),
